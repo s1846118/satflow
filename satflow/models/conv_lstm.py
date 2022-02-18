@@ -7,7 +7,7 @@ import torchvision
 from nowcasting_utils.models.base import register_model
 from nowcasting_utils.models.loss import get_loss
 
-from layers.ConvLSTM import ConvLSTMCell
+from models.layers.ConvLSTM import ConvLSTMCell
 
 
 @register_model
