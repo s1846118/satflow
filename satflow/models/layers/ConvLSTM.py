@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from satflow.models.utils import get_conv_layer
+from models.utils import get_conv_layer
 
 
 class ConvLSTMCell(nn.Module):
