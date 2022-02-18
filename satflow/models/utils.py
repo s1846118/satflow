@@ -2,7 +2,7 @@ import einops
 import numpy as np
 import torch
 
-from satflow.models.layers import CoordConv
+from models.layers import CoordConv
 
 
 def get_conv_layer(conv_type: str = "standard") -> torch.nn.Module:
