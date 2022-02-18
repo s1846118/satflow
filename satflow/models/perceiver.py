@@ -19,7 +19,7 @@ from nowcasting_dataset.consts import (
 )
 from nowcasting_utils.models.base import BaseModel, register_model
 from nowcasting_utils.models.loss import get_loss
-from perceiver_model import MultiPerceiver
+from perceiver_pytorch import MultiPerceiver
 from perceiver_pytorch.decoders import ImageDecoder
 from perceiver_pytorch.encoders import ImageEncoder
 from perceiver_pytorch.modalities import InputModality
