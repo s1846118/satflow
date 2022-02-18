@@ -1,6 +1,6 @@
 from typing import List
-import satflow.models.conv_lstm as conv_lstm
-import satflow.satip_dataloader as datamodule
+import models.conv_lstm as conv_lstm
+import satip_dataloader as datamodule
 from pytorch_lightning import (
     Callback,
     Trainer,
