@@ -24,9 +24,9 @@ class DataModuleClass(pl.LightningDataModule):
         super().__init__()
         self.download_dir = ''
         self.batch_size = 32
-        self.num_workers: int = 8,
-        self.pin_memory: bool = True,
-        self.configuration_filename="satflow/configs/masks.yaml",
+        self.num_workers: int = 8
+        self.pin_memory: bool = True
+        self.configuration_filename="satflow/configs/masks.yaml"
 
     def get_chunks(self,l, n):
         for i in range(0, len(l), n):
@@ -51,14 +51,17 @@ class DataModuleClass(pl.LightningDataModule):
         self.data_array = data_array.sortby('time')
 
     def setup(self, stage=None):
-        self.data_array = self.data_array[:300]
+        self.data_array = self.data_array[:1]
         print("Processing...0%")
         X_tensors = [self.transform(timestep[:-1]) for timestep in self.data_array]
         print("Processing...25%")
         y_tensors = [self.transform(timestep[1:]) for timestep in self.data_array]
         print("Processing...50%")
         X = list(self.get_chunks(X_tensors, 5))
+        X = self.listify(X)
+        print(len(X))
         X = [torch.stack(x) for x in X]
+        print(len(X))
         X = [torch.reshape(x, [1, 5, 890, 1843]) for x in X][:-1]
         print("Processing...75%")
         y = list(self.get_chunks(y_tensors, 5))
@@ -68,16 +71,12 @@ class DataModuleClass(pl.LightningDataModule):
         # dataset = CustomDataset(X,y)
         dataset = list(zip(X,y))
         train_size = int(0.8 * len(y))
-        test_size = int(0.1 * len(y))
-        val_size = len(y) - train_size - test_size
-        self.train_data, self.val_data, self.test_data = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
+        val_size = len(y) - train_size
+        self.train_data, self.val_data = torch.utils.data.random_split(dataset, [train_size, val_size])
 
     def train_dataloader(self):
-        return DataLoader(self.train_data, batch_size=self.batch_size, pin_memory=True, drop_last=False, num_workers = 8)
+        return DataLoader(self.train_data, batch_size=self.batch_size, pin_memory=True, drop_last=False)
 
     def val_dataloader(self):
-        return DataLoader(self.val_data, batch_size=self.batch_size, pin_memory=True, drop_last=False, num_workers = 8)
-
-    def test_dataloader(self):
-        return DataLoader(self.test_data, batch_size=self.batch_size, pin_memory=True, drop_last=False, num_workers = 8)
+        return DataLoader(self.val_data, batch_size=self.batch_size, pin_memory=True, drop_last=False)
 
