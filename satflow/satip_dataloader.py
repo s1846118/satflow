@@ -95,8 +95,6 @@ class DataModuleClass(pl.LightningDataModule):
         y_t = list(zip(*[iter(y_tensors)]*5))
         y_t = [torch.stack(y) for y in y_t][:-1]
         print("Processing...100%")
-        print(X_t[0].shape)
-        print(y_t[0].shape)
         dataset = CustomDataset(X_t,y_t)
         #dataset = list(zip(X,y))
         train_size = int(0.8 * len(y_t))
