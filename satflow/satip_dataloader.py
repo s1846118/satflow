@@ -16,7 +16,7 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         future_image = self.future_images[idx]
         image = self.images[idx]
-        sample = {"Images": image, "FutureImage": future_image}
+        sample = [image, future_image]
         return sample
 
 class DataModuleClass(pl.LightningDataModule):
@@ -24,13 +24,8 @@ class DataModuleClass(pl.LightningDataModule):
         super().__init__()
         self.download_dir = ''
         self.batch_size = 32
-        self.num_workers: int = 8
         self.pin_memory: bool = True
         self.configuration_filename="satflow/configs/masks.yaml"
-
-    def get_chunks(self,l, n):
-        for i in range(0, len(l), n):
-            yield l[i:i + n]
 
     def listify(self, masks):
         return [item for sublist in masks for item in sublist]
@@ -51,27 +46,25 @@ class DataModuleClass(pl.LightningDataModule):
         self.data_array = data_array.sortby('time')
 
     def setup(self, stage=None):
-        self.data_array = self.data_array[:1]
+        self.data_array = self.data_array[:50]
         print("Processing...0%")
         X_tensors = [self.transform(timestep[:-1]) for timestep in self.data_array]
         print("Processing...25%")
         y_tensors = [self.transform(timestep[1:]) for timestep in self.data_array]
         print("Processing...50%")
-        X = list(self.get_chunks(X_tensors, 5))
-        X = self.listify(X)
-        print(len(X))
-        X = [torch.stack(x) for x in X]
-        print(len(X))
-        X = [torch.reshape(x, [1, 5, 890, 1843]) for x in X][:-1]
+        X_tensors = [torch.reshape(t,[1,890, 1843]) for t in X_tensors]
+        y_tensors = [torch.reshape(t,[1,890, 1843]) for t in y_tensors]
+        X_t = list(zip(*[iter(X_tensors)]*5))
+        X_t = [torch.stack(x) for x in X_t][:-1]
+        #X = [torch.reshape(x, [1,5,1,890, 1843]) for x in X_t][:-1]
         print("Processing...75%")
-        y = list(self.get_chunks(y_tensors, 5))
-        y = [torch.stack(y) for y in y]
-        y = [torch.reshape(y, [1, 5, 890, 1843]) for y in y][1:]
+        y_t = list(zip(*[iter(y_tensors)]*5))
+        y_t = [torch.stack(y) for y in y_t][:-1]
         print("Processing...100%")
-        # dataset = CustomDataset(X,y)
-        dataset = list(zip(X,y))
-        train_size = int(0.8 * len(y))
-        val_size = len(y) - train_size
+        dataset = CustomDataset(X_t,y_t)
+        #dataset = list(zip(X,y))
+        train_size = int(0.8 * len(y_t))
+        val_size = len(y_t) - train_size
         self.train_data, self.val_data = torch.utils.data.random_split(dataset, [train_size, val_size])
 
     def train_dataloader(self):

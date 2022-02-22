@@ -210,7 +210,6 @@ class ConvLSTM(torch.nn.Module):
         input_tensor:
             5-D Tensor of shape (b, t, c, h, w)        #   batch, time, channel, height, width
         """
-
         # find size of different input dimensions
         b, seq_len, _, h, w = x.size()
 
