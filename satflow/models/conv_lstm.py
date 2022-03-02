@@ -52,6 +52,8 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, y = batch
+        x = x.detach().float()
+        y = y.detach().float()
         y_hat = self(x, self.forecast_steps)
         y_hat = torch.permute(y_hat, dims=(0, 2, 1, 3, 4))
         # Generally only care about the center x crop, so the model can take into account the clouds in the area without
@@ -71,6 +73,8 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
+        x = x.detach().float()
+        y = y.detach().float()
         y_hat = self(x, self.forecast_steps)
         y_hat = torch.permute(y_hat, dims=(0, 2, 1, 3, 4))
         val_loss = self.criterion(y_hat, y)

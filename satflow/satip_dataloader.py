@@ -6,6 +6,8 @@ from torch.utils.data import random_split, DataLoader, Dataset
 import xarray
 import numpy as np
 import pandas as pd
+import gc
+import psutil
 
 class CustomDataset(Dataset):
     def __init__(self, images, future_images):
@@ -25,8 +27,9 @@ class DataModuleClass(pl.LightningDataModule):
     def __init__(self):
         super().__init__()
         self.download_dir = ''
-        self.batch_size = 16
+        self.batch_size = 4
         self.pin_memory: bool = True
+        self.num_workers = 32
         self.configuration_filename="satflow/configs/masks.yaml"
 
     def listify(self, masks):
@@ -75,35 +78,52 @@ class DataModuleClass(pl.LightningDataModule):
         return data_array
 
     def setup(self, stage=None):
+        self.data_array = self.data_array[:100000]
+        gc.collect()
         regions = []
         centers = [(512,512)]
         for (x_osgb,y_osgb) in centers:
             regions.append(self.get_spatial_region_of_interest(self.data_array,x_osgb,y_osgb))
         print("Processing...0%")
+        print(str(psutil.virtual_memory()))
         X_tensors = [self.transform(timestep[:-1]) for timestep in regions]
+        print(str(psutil.virtual_memory()))
         X_tensors = self.listify(X_tensors)
+        print(str(psutil.virtual_memory()))
         print("Processing...25%")
         y_tensors = [self.transform(timestep[1:]) for timestep in regions]
+        print(str(psutil.virtual_memory()))
         y_tensors = self.listify(y_tensors)
+        print(str(psutil.virtual_memory()))
         print("Processing...50%")
         X_tensors = [torch.reshape(t,[1,256, 256]) for t in X_tensors]
+        print(str(psutil.virtual_memory()))
         y_tensors = [torch.reshape(t,[1,256, 256]) for t in y_tensors]
+        print(str(psutil.virtual_memory()))
         X_t = list(zip(*[iter(X_tensors)]*5))
+        print(str(psutil.virtual_memory()))
         X_t = [torch.stack(x) for x in X_t][:-1]
+        print(str(psutil.virtual_memory()))
         #X = [torch.reshape(x, [1,5,1,890, 1843]) for x in X_t][:-1]
         print("Processing...75%")
         y_t = list(zip(*[iter(y_tensors)]*5))
+        print(str(psutil.virtual_memory()))
         y_t = [torch.stack(y) for y in y_t][:-1]
+        print(str(psutil.virtual_memory()))
         print("Processing...100%")
         dataset = CustomDataset(X_t,y_t)
         #dataset = list(zip(X,y))
         train_size = int(0.8 * len(y_t))
+        print(train_size)
         val_size = len(y_t) - train_size
+        print(val_size)
         self.train_data, self.val_data = torch.utils.data.random_split(dataset, [train_size, val_size])
 
     def train_dataloader(self):
-        return DataLoader(self.train_data, batch_size=self.batch_size, pin_memory=True, drop_last=False, num_workers=8)
+        gc.collect()
+        return DataLoader(self.train_data, batch_size=self.batch_size, pin_memory=True, drop_last=False)
 
     def val_dataloader(self):
-        return DataLoader(self.val_data, batch_size=self.batch_size, pin_memory=True, drop_last=False, num_workers=8)
+        gc.collect()
+        return DataLoader(self.val_data, batch_size=self.batch_size, pin_memory=True, drop_last=False)
 
