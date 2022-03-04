@@ -57,7 +57,7 @@ if __name__ == '__main__':
     torch.cuda.memory_summary(device=None, abbreviated=False)
     model = conv_lstm.EncoderDecoderConvLSTM(input_channels = 1, out_channels = 1, forecast_steps = 5)
     i = 0
-    new_epochs = 1
+    new_epochs = 10
     checkpoint_callback = ModelCheckpoint(
         dirpath='./lightning_logs/version_0/checkpoints/',
         filename='checky', save_last=True)
@@ -76,8 +76,8 @@ if __name__ == '__main__':
     data_array = data_array[:100000]
     gc.collect()
     startChunk = 0
-    endChunk = 10000
-    for j in range(10):
+    endChunk = 1000
+    for j in range(100):
         regions = []
         centers = [(512, 512)]
         for (x_osgb, y_osgb) in centers:
@@ -112,13 +112,13 @@ if __name__ == '__main__':
         else:
             model.load_state_dict(torch.load("./model.pth"))
             model.train()
-            new_epochs += 100
+            new_epochs += 10
             trainer = pl.Trainer(strategy="ddp_spawn", gpus=1, max_epochs=new_epochs, enable_checkpointing=True,
                                  resume_from_checkpoint="./lightning_logs/version_0/checkpoints/last.ckpt",
                                  callbacks=[checkpoint_callback])
             trainer.fit(model, DataLoader(train, num_workers=0, batch_size=1),
                         DataLoader(val, num_workers=0, batch_size=1))
-        startChunk += 10000
-        endChunk += 10000
+        startChunk += 1000
+        endChunk += 1000
 
 
