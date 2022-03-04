@@ -78,6 +78,7 @@ if __name__ == '__main__':
     startChunk = 0
     endChunk = 1000
     for j in range(100):
+        data_array = data_array[startChunk:endChunk]
         regions = []
         centers = [(512, 512)]
         for (x_osgb, y_osgb) in centers:
