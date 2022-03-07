@@ -1,6 +1,7 @@
 import logging
+import numpy as np
 from typing import Any, Dict, Iterable, Optional, Tuple, Union
-
+import math
 import einops
 import pandas as pd
 import torch
@@ -36,26 +37,42 @@ from transformers import (
     PerceiverForOpticalFlow,
     PerceiverModel,
 )
+import torch.nn.functional as F
+import torch.nn as nn 
+import pytorch_lightning as pl
+from datetime import datetime
 
 logger = logging.getLogger("satflow.model")
 logger.setLevel(logging.WARN)
 
-HRV_KEY = "hrv_" + SATELLITE_DATA
-
-
 class HuggingFacePerceiver(BaseModel):
-    def __init__(self, input_size: int = 224):
+    def __init__(self, input_size: int = 256):
+        super(HuggingFacePerceiver, self).__init__()
         self.model = PerceiverForOpticalFlow.from_pretrained(
             "deepmind/optical-flow-perceiver",
             ignore_mismatched_sizes=True,
             train_size=[input_size, input_size],
         )
 
-        self.channel_change = torch.nn.Conv2d(in_channels=2, out_channels=11)
-        self.predict_satellite = False
-        self.predict_hrv_satellite = True
-        self.hrv_channel_change = torch.nn.Conv2d(in_channels=2, out_channels=1)
+        self.layer = torch.nn.Conv2d(in_channels=2, out_channels=1, kernel_size = 1)
+        self.criterion = nn.MSELoss()
+        self.i = 0
 
+    def extract_image_patches(self, x, kernel, stride=1, dilation=1):
+        # Do TF 'SAME' Padding
+        b,c,h,w = x.shape
+        h2 = math.ceil(h / stride)
+        w2 = math.ceil(w / stride)
+        pad_row = (h2 - 1) * stride + (kernel - 1) * dilation + 1 - h
+        pad_col = (w2 - 1) * stride + (kernel - 1) * dilation + 1 - w
+        x = F.pad(x, (pad_row//2, pad_row - pad_row//2, pad_col//2, pad_col - pad_col//2))
+
+        # Extract patches
+        patches = x.unfold(2, kernel, stride).unfold(3, kernel, stride)
+        patches = patches.permute(0,4,5,1,2,3).contiguous()
+
+        return patches.view(b,-1,patches.shape[-2], patches.shape[-1])
+   
     def forward(self, x, **kwargs) -> Any:
         return model(inputs=x)
 
@@ -63,23 +80,25 @@ class HuggingFacePerceiver(BaseModel):
         x, y = batch
         # Now run predictions for all the queries
         # Predicting all future ones at once
+        x = x.detach().float()
+        y = y.detach().float()
         losses = []
-        if self.predict_satellite:
-            sat_y_hat = self.model(inputs=x)
-            sat_y_hat = self.channel_change(sat_y_hat)
-            # Satellite losses
-            sat_loss, sat_frame_loss = self.mse(hrv_sat_y_hat, y[SATELLITE_DATA])
-            losses.append(sat_loss)
-        if self.predict_hrv_satellite:
-            hrv_sat_y_hat = self.model(inputs=x)
-            hrv_sat_y_hat = self.hrv_channel_change(hrv_sat_y_hat)
-            # HRV Satellite losses
-            hrv_sat_loss, sat_frame_loss = self.mse(hrv_sat_y_hat, y[HRV_KEY])
-            losses.append(hrv_sat_loss)
+        batch_size, _, C, H, W = x.shape
+        patches = self.extract_image_patches(x.view(batch_size*2,C,H,W), 3)
+        _, C, H, W = patches.shape
+        patches = patches.view(batch_size, -1, C, H, W).float().to(self.model.device) 
+        hrv_sat_y_hat = self.model(inputs=patches)
+        hrv_sat_y_hat = self.layer(torch.reshape(hrv_sat_y_hat['logits'],[1,2,256,256]))
+        # HRV Satellite losses
+        hrv_sat_loss = self.criterion(hrv_sat_y_hat, y)
+        losses.append(hrv_sat_loss)
         loss = losses[0]
         for sat_loss in losses[1:]:
             loss += sat_loss
         self.log_dict({f"{'train' if is_training else 'val'}/loss": loss})
+        f = open("losses.txt", "a")
+        f.write(str(loss))
+        f.close()
         if is_training:
             return loss
         else:
@@ -87,4 +106,13 @@ class HuggingFacePerceiver(BaseModel):
             return loss
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=self.lr)
+        if self.i == 0:
+            self.i = 1
+            self.optimizer = torch.optim.AdamW(self.parameters(), lr=1e-2)
+            torch.save(self.optimizer.state_dict(),"../../../../../../../../../disk/scratch/s1827995-new/optim.pt")
+            return self.optimizer
+        else:
+            self.optimizer = torch.optim.AdamW(self.parameters(), lr=1e-2)
+            self.optimizer.load_state_dict("../../../../../../../../../disk/scratch/s1827995-new/optim.pt")
+            return self.optimizer
+   
