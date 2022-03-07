@@ -6,8 +6,12 @@ import torch.nn as nn
 import torchvision
 from nowcasting_utils.models.base import register_model
 from nowcasting_utils.models.loss import get_loss
-
+from skimage.metrics import structural_similarity as ssim
+import argparse
+import imutils
+import cv2
 from models.layers.ConvLSTM import ConvLSTMCell
+import numpy as np
 
 
 @register_model
@@ -62,6 +66,24 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
         # if self.visualize:
         #    if np.random.random() < 0.01:
         #        self.visualize_step(x, y, y_hat, batch_idx)
+        grayA = y_hat.cpu().data.numpy().reshape(5,256,256)
+        grayB = y.cpu().data.numpy().reshape(5,256,256)
+
+        # 5. Compute the Structural Similarity Index (SSIM) between the two
+        #    images, ensuring that the difference image is returned
+        for x in range(5):
+        
+            A = grayA[x]
+            B = grayB[x]
+            a_max = A.argmax()
+            b_max = B.argmax()
+
+            score = (ssim(A, B, data_range = a_max - b_max))
+        
+            f = open("score.txt","a")
+            f.write(str(score) + "\n")
+            f.close()
+
         loss = self.criterion(y_hat, y)
         self.log("train/loss", loss, on_step=True)
         frame_loss_dict = {}
