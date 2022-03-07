@@ -56,12 +56,11 @@ if __name__ == '__main__':
     torch.multiprocessing.set_sharing_strategy("file_system")
     torch.cuda.memory_summary(device=None, abbreviated=False)
     model = conv_lstm.EncoderDecoderConvLSTM(input_channels = 1, out_channels = 1, forecast_steps = 5)
-    i = 0
-    new_epochs = 10
+    new_epochs = 1000
     checkpoint_callback = ModelCheckpoint(
-        dirpath='./lightning_logs/version_0/checkpoints/',
+        dirpath='./new_model/lightning_logs/version_0/checkpoints/',
         filename='checky', save_last=True)
-    trainer = pl.Trainer(strategy="ddp_spawn", gpus=1, max_epochs=new_epochs, enable_checkpointing=True,
+    trainer = pl.Trainer(strategy="ddp_spawn", gpus=[1], max_epochs=new_epochs, enable_checkpointing=True,
                          callbacks=[checkpoint_callback])
     i = 0
     SATELLITE_ZARR_PATH = "gs://public-datasets-eumetsat-solar-forecasting/satellite/EUMETSAT/SEVIRI_RSS/v3/eumetsat_seviri_hrv_uk.zarr"
@@ -73,53 +72,31 @@ if __name__ == '__main__':
     dask.config.set(**{"array.slicing.split_large_chunks": False})
     data_array = data["data"]
     data_array = data_array.sortby('time')
-    data_array = data_array[:100000]
+    data_array = data_array[:1000]
     gc.collect()
-    startChunk = 0
-    endChunk = 1000
-    for j in range(100):
-        data_array = data_array[startChunk:endChunk]
-        regions = []
-        centers = [(512, 512)]
-        for (x_osgb, y_osgb) in centers:
-            regions.append(get_spatial_region_of_interest(data_array, x_osgb, y_osgb))
-        print(f"Processing array {j+1} of 10...0%")
-        X_tensors = [to_tensor(timestep[:-1]) for timestep in regions]
-        X_tensors = list(chain.from_iterable(X_tensors))
-        print(f"Processing array {j+1} of 10...25%")
-        y_tensors = [to_tensor(timestep[1:]) for timestep in regions]
-        y_tensors = list(chain.from_iterable(y_tensors))
-        print(f"Processing array {j+1} of 10...50%")
-        X_tensors = [torch.reshape(t, [1, 256, 256]) for t in X_tensors]
-        y_tensors = [torch.reshape(t, [1, 256, 256]) for t in y_tensors]
-        X_t = list(zip(*[iter(X_tensors)] * 5))
-        X_t = [torch.stack(x) for x in X_t][:-1]
-        print(f"Processing array {j+1} of 10...75%")
-        y_t = list(zip(*[iter(y_tensors)] * 5))
-        y_t = [torch.stack(y) for y in y_t][:-1]
-        print(f"Processing array {j+1} of 10...100%")
-        dataset = SimpleDataset(X_t, y_t)
-        train_size = int(0.9 * dataset.__len__())
-        val_size = int(dataset.__len__() - train_size)
-        print(f"""Train size = {train_size}""")
-        print(f"""Val size = {val_size}""")
-        train, val = torch.utils.data.random_split(dataset, [train_size, val_size])
-        log = utils.get_logger(__name__)
-        log.info("Starting training!")
-        if i == 0:
-            trainer.fit(model, DataLoader(train, num_workers=0, batch_size=1), DataLoader(val, num_workers=0, batch_size=1))
-            torch.save(model.state_dict(), "model.pth")
-            i = 1
-        else:
-            model.load_state_dict(torch.load("./model.pth"))
-            model.train()
-            new_epochs += 10
-            trainer = pl.Trainer(strategy="ddp_spawn", gpus=1, max_epochs=new_epochs, enable_checkpointing=True,
-                                 resume_from_checkpoint="./lightning_logs/version_0/checkpoints/last.ckpt",
-                                 callbacks=[checkpoint_callback])
-            trainer.fit(model, DataLoader(train, num_workers=0, batch_size=1),
-                        DataLoader(val, num_workers=0, batch_size=1))
-        startChunk += 1000
-        endChunk += 1000
+    regions = []
+    centers = [(512, 512)]
+    for (x_osgb, y_osgb) in centers:
+        regions.append(get_spatial_region_of_interest(data_array, x_osgb, y_osgb))
+    X_tensors = [to_tensor(timestep[:-1]) for timestep in regions]
+    X_tensors = list(chain.from_iterable(X_tensors))
+    y_tensors = [to_tensor(timestep[1:]) for timestep in regions]
+    y_tensors = list(chain.from_iterable(y_tensors))
+    X_tensors = [torch.reshape(t, [1, 256, 256]) for t in X_tensors]
+    y_tensors = [torch.reshape(t, [1, 256, 256]) for t in y_tensors]
+    X_t = list(zip(*[iter(X_tensors)] * 5))
+    X_t = [torch.stack(x) for x in X_t][:-1]
+    y_t = list(zip(*[iter(y_tensors)] * 5))
+    y_t = [torch.stack(y) for y in y_t][:-1]
+    dataset = SimpleDataset(X_t, y_t)
+    train_size = int(0.9 * dataset.__len__())
+    val_size = int(dataset.__len__() - train_size)
+    print(f"""Train size = {train_size}""")
+    print(f"""Val size = {val_size}""")
+    train, val = torch.utils.data.random_split(dataset, [train_size, val_size])
+    log = utils.get_logger(__name__)
+    log.info("Starting training!")
+    trainer.fit(model, DataLoader(train, num_workers=0, batch_size=1), DataLoader(val, num_workers=0, batch_size=1))
+    torch.save(model.state_dict(), "./new_model/model.pth")
 
 
