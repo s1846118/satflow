@@ -41,6 +41,10 @@ import torch.nn.functional as F
 import torch.nn as nn 
 import pytorch_lightning as pl
 from datetime import datetime
+from skimage.measure import compare_ssim
+import argparse
+import imutils
+import cv2
 
 logger = logging.getLogger("satflow.model")
 logger.setLevel(logging.WARN)
@@ -89,6 +93,15 @@ class HuggingFacePerceiver(BaseModel):
         patches = patches.view(batch_size, -1, C, H, W).float().to(self.model.device) 
         hrv_sat_y_hat = self.model(inputs=patches)
         hrv_sat_y_hat = self.layer(torch.reshape(hrv_sat_y_hat['logits'],[1,2,256,256]))
+
+        grayA = cv2.cvtColor(y, cv2.COLOR_BGR2GRAY)
+        grayB = cv2.cvtColor(hrv_sat_y_hat, cv2.COLOR_BGR2GRAY)
+
+        # 5. Compute the Structural Similarity Index (SSIM) between the two
+        #    images, ensuring that the difference image is returned
+        (score, diff) = compare_ssim(grayA, grayB, full=True)
+        diff = (diff * 255).astype("uint8")
+
         # HRV Satellite losses
         hrv_sat_loss = self.criterion(hrv_sat_y_hat, y)
         losses.append(hrv_sat_loss)
@@ -96,9 +109,10 @@ class HuggingFacePerceiver(BaseModel):
         for sat_loss in losses[1:]:
             loss += sat_loss
         self.log_dict({f"{'train' if is_training else 'val'}/loss": loss})
-        f = open("losses.txt", "a")
-        f.write(str(loss))
-        f.close()
+        acc = open("score.txt","a")
+        acc.write(str(score)+"\n")
+        acc.close()
+        print("Score!")
         if is_training:
             return loss
         else:
