@@ -22,7 +22,7 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
         input_channels: int = 12,
         out_channels: int = 1,
         forecast_steps: int = 48,
-        lr: float = 0.001,
+        lr: float = 0.0001,
         visualize: bool = False,
         loss: Union[str, torch.nn.Module] = "mse",
         pretrained: bool = False,
@@ -35,6 +35,7 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
         self.visualize = visualize
         self.model = ConvLSTM(input_channels, hidden_dim, out_channels, conv_type=conv_type)
         self.save_hyperparameters()
+        self.step = 0
 
     @classmethod
     def from_config(cls, config):
@@ -54,35 +55,72 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
         # optimizer = torch.optim.adam()
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
+    def vis(self, x, y, y_hat, batch_idx):
+        """
+            Visualization Step
+            Args:
+            x: input data
+            y: the truth
+            y_hat: the predictions
+            batch_idx: what batch index this is
+            step: what step number this is
+        """
+        # the logger you used (in this case tensorboard)
+        tensorboard = self.logger.experiment
+        # Timesteps per channel
+        future_image = y.cpu().detach().float()
+        name = f"""truth_{self.step}"""
+        tensorboard.add_image(name, torch.reshape(future_image,[256,256]).numpy(), dataformats='HW')
+        generated_image = y_hat.cpu().detach().float()
+        name = f"""prediction_{self.step}"""
+        tensorboard.add_image(name, torch.reshape(generated_image,[256,256]).numpy(), dataformats='HW')
+
+
     def training_step(self, batch, batch_idx):
         x, y = batch
         x = x.detach().float()
         y = y.detach().float()
+        
+        for i, b in enumerate(batch):
+            x[i] = torch.div(torch.subtract(x[i],torch.max(x[i])),torch.max(x[i]))
+            y[i] = torch.div(torch.subtract(y[i],torch.max(y[i])),torch.max(y[i]))
+
         y_hat = self(x, self.forecast_steps)
         y_hat = torch.permute(y_hat, dims=(0, 2, 1, 3, 4))
+
+
+
         # Generally only care about the center x crop, so the model can take into account the clouds in the area without
         # being penalized for that, but for now, just do general MSE loss, also only care about first 12 channels
         # the logger you used (in this case tensorboard)
         # if self.visualize:
         #    if np.random.random() < 0.01:
         #        self.visualize_step(x, y, y_hat, batch_idx)
-        grayA = y_hat.cpu().data.numpy().reshape(5,256,256)
-        grayB = y.cpu().data.numpy().reshape(5,256,256)
+        grayA = y_hat.cpu().data.numpy()
+        grayB = y.cpu().data.numpy()
+
+        #print(grayA.shape)
+        #print(grayB.shape)
+
+
 
         # 5. Compute the Structural Similarity Index (SSIM) between the two
         #    images, ensuring that the difference image is returned
-        for x in range(5):
+        for yo in range(grayA.shape[0]):
+            for roslyn in range(grayA.shape[1]):
+                for big in range(grayA.shape[2]):
         
-            A = grayA[x]
-            B = grayB[x]
-            a_max = A.argmax()
-            b_max = B.argmax()
+                    A = grayA[yo][roslyn][big]
+                    B = grayB[yo][roslyn][big]
+                    a_max = B.argmax()
+                    b_max = B.argmin()
 
-            score = (ssim(A, B, data_range = a_max - b_max))
-        
-            f = open("score.txt","a")
-            f.write(str(score) + "\n")
-            f.close()
+                    score = ssim(A, B, data_range = a_max - b_max)
+                    self.vis(x[yo][roslyn][big], y[yo][roslyn][big], y_hat[yo][roslyn][big], 0)
+
+                    f = open("score.txt","a")
+                    f.write(str(score) + "\n")
+                    f.close()
 
         loss = self.criterion(y_hat, y)
         self.log("train/loss", loss, on_step=True)
@@ -99,6 +137,7 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
         y = y.detach().float()
         y_hat = self(x, self.forecast_steps)
         y_hat = torch.permute(y_hat, dims=(0, 2, 1, 3, 4))
+
         val_loss = self.criterion(y_hat, y)
         # Save out loss per frame as well
         frame_loss_dict = {}
@@ -108,6 +147,7 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
             frame_loss_dict[f"val/frame_{f}_loss"] = frame_loss
         self.log("val/loss", val_loss, on_step=True, on_epoch=True)
         self.log_dict(frame_loss_dict, on_step=False, on_epoch=True)
+        self.step +=1
         return val_loss
 
     def test_step(self, batch, batch_idx):
@@ -117,7 +157,7 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
         return loss
 
     def visualize_step(self, x, y, y_hat, batch_idx, step="train"):
-        tensorboard = self.logger.experiment[0]
+        tensorboard = self.logger.experiment
         # Add all the different timesteps for a single prediction, 0.1% of the time
         if len(x.shape) == 5:
             # Timesteps per channel
@@ -210,7 +250,7 @@ class ConvLSTM(torch.nn.Module):
         # encoder_vector
         encoder_vector = h_t2
 
-        # decoder
+        #l decoder
         for t in range(future_step):
             h_t3, c_t3 = self.decoder_1_convlstm(
                 input_tensor=encoder_vector, cur_state=[h_t3, c_t3]
