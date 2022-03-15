@@ -13,7 +13,6 @@ import cv2
 from models.layers.ConvLSTM import ConvLSTMCell
 import numpy as np
 
-
 @register_model
 class EncoderDecoderConvLSTM(pl.LightningModule):
     def __init__(
@@ -68,12 +67,10 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
         # the logger you used (in this case tensorboard)
         tensorboard = self.logger.experiment
         # Timesteps per channel
-        future_image = y.cpu().detach().float()
         name = f"""truth_{self.step}"""
-        tensorboard.add_image(name, torch.reshape(future_image,[256,256]).numpy(), dataformats='HW')
-        generated_image = y_hat.cpu().detach().float()
+        tensorboard.add_image(name, y.cpu().data.numpy(), dataformats='HW')
         name = f"""prediction_{self.step}"""
-        tensorboard.add_image(name, torch.reshape(generated_image,[256,256]).numpy(), dataformats='HW')
+        tensorboard.add_image(name, y_hat.cpu().data.numpy(), dataformats='HW')
 
 
     def training_step(self, batch, batch_idx):
@@ -81,14 +78,13 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
         x = x.detach().float()
         y = y.detach().float()
         
-        for i, b in enumerate(batch):
-            x[i] = torch.div(torch.subtract(x[i],torch.max(x[i])),torch.max(x[i]))
-            y[i] = torch.div(torch.subtract(y[i],torch.max(y[i])),torch.max(y[i]))
+        for i in range(x.shape[0]):
+            x[i] = torch.div(torch.subtract(x[i],torch.min(x[i])),torch.max(x[i]))
+            y[i] = torch.div(torch.subtract(y[i],torch.min(y[i])),torch.max(y[i]))
 
         y_hat = self(x, self.forecast_steps)
         y_hat = torch.permute(y_hat, dims=(0, 2, 1, 3, 4))
-
-
+        print(y_hat)
 
         # Generally only care about the center x crop, so the model can take into account the clouds in the area without
         # being penalized for that, but for now, just do general MSE loss, also only care about first 12 channels
@@ -98,10 +94,6 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
         #        self.visualize_step(x, y, y_hat, batch_idx)
         grayA = y_hat.cpu().data.numpy()
         grayB = y.cpu().data.numpy()
-
-        #print(grayA.shape)
-        #print(grayB.shape)
-
 
 
         # 5. Compute the Structural Similarity Index (SSIM) between the two
@@ -135,8 +127,20 @@ class EncoderDecoderConvLSTM(pl.LightningModule):
         x, y = batch
         x = x.detach().float()
         y = y.detach().float()
+
+        for i in range(x.shape[0]):
+            x[i] = torch.div(torch.subtract(x[i],torch.min(x[i])),torch.max(x[i]))
+            y[i] = torch.div(torch.subtract(y[i],torch.min(y[i])),torch.max(y[i]))
+
+
         y_hat = self(x, self.forecast_steps)
         y_hat = torch.permute(y_hat, dims=(0, 2, 1, 3, 4))
+        print(y_hat)
+
+        for q in range(x.shape[0]):
+            for w in range(x.shape[1]):
+                for e in range(x.shape[2]):
+                    self.vis(x[q][w][e], y[q][w][e], y_hat[q][w][e], 0)
 
         val_loss = self.criterion(y_hat, y)
         # Save out loss per frame as well

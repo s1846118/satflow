@@ -54,13 +54,12 @@ def get_spatial_region_of_interest(data_array, x_index_at_center: Number, y_inde
 
 if __name__ == '__main__':
     torch.multiprocessing.set_sharing_strategy("file_system")
-    torch.cuda.memory_summary(device=None, abbreviated=False)
     model = conv_lstm.EncoderDecoderConvLSTM(input_channels = 1, out_channels = 1, forecast_steps = 5)
     new_epochs = 1000
     checkpoint_callback = ModelCheckpoint(
         dirpath='./new_model/lightning_logs/version_0/checkpoints/',
         filename='checky', save_last=True)
-    trainer = pl.Trainer(strategy="ddp_spawn", gpus=[1], max_epochs=new_epochs, enable_checkpointing=True,
+    trainer = pl.Trainer(strategy="ddp_spawn", gpus=[0], max_epochs=new_epochs, enable_checkpointing=True,
                          callbacks=[checkpoint_callback])
     i = 0
     SATELLITE_ZARR_PATH = "gs://public-datasets-eumetsat-solar-forecasting/satellite/EUMETSAT/SEVIRI_RSS/v3/eumetsat_seviri_hrv_uk.zarr"
@@ -72,7 +71,8 @@ if __name__ == '__main__':
     dask.config.set(**{"array.slicing.split_large_chunks": False})
     data_array = data["data"]
     data_array = data_array.sortby('time')
-    data_array = data_array[:1000]
+    #data_array = data_array[:1000]
+    data_array = data_array[119:206]
     gc.collect()
     regions = []
     centers = [(512, 512)]
@@ -96,7 +96,7 @@ if __name__ == '__main__':
     train, val = torch.utils.data.random_split(dataset, [train_size, val_size])
     log = utils.get_logger(__name__)
     log.info("Starting training!")
-    trainer.fit(model, DataLoader(train, num_workers=0, batch_size=1), DataLoader(val, num_workers=0, batch_size=1))
+    trainer.fit(model, DataLoader(train, num_workers=0, batch_size=3), DataLoader(val, num_workers=0, batch_size=3))
     torch.save(model.state_dict(), "./new_model/model.pth")
 
 
